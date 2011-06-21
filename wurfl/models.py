@@ -129,10 +129,15 @@ class BaseDevice(models.Model):
             return device[0]
         else:
             if settings.UA_PREFIX_MATCHING:
-                # Try more flexible matching, 1 third of the UA string
-                ds_user_agent = user_agent[:len(user_agent)//3]
-                devices = cls.objects.filter(user_agent__startswith=ds_user_agent)
-                devices = devices.order_by('-actual_device_root')[:settings.UA_PREFIX_MATCHING_LIMIT]
+                #~ Try more flexible matching, from 1/3rd to 1/10th of the original UA string
+                #~ We break out as soon as we get a match (or matches, in which case we use Levenshtein 
+                #~ distance to determine which one we want to use) or if the shortened UA string is less
+                #~ than 5 characters long
+                devices = None
+                for factor in range(3,10):
+                    if len(user_agent)/factor <= 5: break
+                    devices = cls._match_partial_user_agent(user_agent,factor)
+                    if len(devices): break
                 
                 if len(devices):
                     user_agent = force_unicode(user_agent)
@@ -150,7 +155,12 @@ class BaseDevice(models.Model):
                 raise NotImplementedError, 'Generic properties matching is not implemented'
 
         raise NoMatch, "Can't find a match in currently installed WURFL table for user_agent `%s`" % user_agent
-
+    
+    @classmethod
+    def _match_partial_user_agent(cls, user_agent, factor):
+        ds_user_agent = user_agent[:len(user_agent)//factor]
+        return cls.objects.filter(user_agent__startswith=ds_user_agent).order_by('-actual_device_root')[:settings.UA_PREFIX_MATCHING_LIMIT]
+     
     def _build_full_capabilities(self):
         # Iteratively build capabilities list
         capabilities = [self.json_capabilities]
